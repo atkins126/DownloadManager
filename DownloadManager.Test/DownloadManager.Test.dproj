@@ -95,6 +95,7 @@
         <DCCReference Include="..\DownloadManager.Vcl\Source\Domain\ContentDispositionHelper.pas"/>
         <DCCReference Include="Source\Domain\ContentDispositionHelperTest.pas"/>
         <DCCReference Include="..\DownloadManager.Vcl\Source\Infra\Constants.pas"/>
+        <DCCReference Include="..\DownloadManager.Vcl\Source\Domain\FileManager.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
