@@ -1,17 +1,14 @@
 # Download Manager
 
 <p align="center" display="inline-block">
-  <img src="https://img.shields.io/github/languages/top/ozmartins/downloadmanager" alt="top-language"/>
-  <a href="https://www.codacy.com/gh/ozmartins/downloadmanager/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=ozmartins/downloadmanager&amp;utm_campaign=Badge_Grade"><img src="https://app.codacy.com/project/badge/Grade/a148a172d5b6471098a0f0166b08e542"/></a>
+  <img src="https://img.shields.io/github/languages/top/ozmartins/downloadmanager" alt="top-language"/>  
   <img alt="Repository size" src="https://img.shields.io/github/repo-size/ozmartins/downloadmanager.svg">
-  <a href="https://github.com/Editora-Artigos/article-model/commits/master">
+  <a href="https://github.com/ozmartins/downloadmanager/commits/master">
     <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/ozmartins/downloadmanager.svg">
   </a>
-
   <a href="https://github.com/ozmartins/downloadmanager">
     <img alt="Repository issues" src="https://img.shields.io/github/issues/ozmartins/downloadmanager.svg">
   </a>
-
   <img alt="GitHub" src="https://img.shields.io/github/license/ozmartins/downloadmanager.svg">
   </p>
 </p>
