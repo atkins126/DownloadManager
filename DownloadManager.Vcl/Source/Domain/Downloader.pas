@@ -4,20 +4,10 @@ interface
 
 uses
   SimpleNetHTTPRequest, System.Net.HttpClient, Subject, System.Net.Mime, System.Net.HttpClientComponent,
-  MessageQueue;
-
-const
-  cDownloaderIsNotDownloading = 'Erro interno: O downloader não está realizando um download.';
-  cDownloaderIsBusy = 'Erro interno: O downloader está ocupado. Tente novamente mais tarde.';
-  cUrlIsEmpty = 'Erro interno: O parâmetro "URL" está vazio.';
-  cUrlIsNotALink = 'Erro interno: O parâmetro não corresponde a um link para download.';
-  cResponseHeaderDoesNotContainsContentField = 'Erro interno: O cabeçalho da resposta HTTP não possui o campo "Content-Disposition".';
-  cContentDisposition = 'Content-Disposition';
-  cNetHTTPRequestIsNull = 'O parâmetro ANetHTTPRequestIsNull não pode ser nulo.';
-  cDownloadCompleted = 'Download concluído com sucesso!';
+  MessageQueue, DomainConsts;
 
 type
-  TDownloaderState = (dsIdle, dsDownloading, dsAborted);
+  TDownloaderState = (dsIdle, dsDownloading, dsAborted, dsCompleted);
 
   TDownloader = class
   private
@@ -30,8 +20,6 @@ type
     procedure OnReceiveData(const Sender: TObject; AContentLength, AReadCount: Int64; var AAbort: Boolean);
     procedure OnRequestCompleted(const Sender: TObject; const AResponse: IHTTPResponse);
     procedure OnRequestError(const Sender: TObject; const AError: string);
-
-    function Downloadable(AUrl: String): Boolean;
   public
     property Subject: TSubject read fSubject;
     property MessageQueue: TMessageQueue read fMessageQueue;
@@ -43,12 +31,15 @@ type
 
     function Download(AUrl: String): IHttpResponse;
     procedure Abort();
+
+    function Downloading(): Boolean;
+    function AllowNewDownload(): Boolean;
   end;
 
 implementation
 
 uses
-  System.SysUtils, ContentDisposition, Vcl.Dialogs;
+  System.SysUtils, HttpHeaderHelper, Vcl.Dialogs;
 
 { TDownloader }
 
@@ -68,6 +59,11 @@ end;
 /// <param name="ANetHTTPRequest">An instance of TNetHTTPRequest will be used to execute the download. Is not necessary to feed the "Client" property.</param>
 /// <remarks>If ANetHTTPRequest is null, raises an exception.</remarks>
 /// <returns>It returns an instance of TDownloader class.</returns>
+function TDownloader.AllowNewDownload: Boolean;
+begin
+  Result := fState <> TDownloaderState.dsDownloading;
+end;
+
 constructor TDownloader.Create(AHttpRequest: ISimpleNetHTTPRequest);
 begin
   if AHttpRequest = nil then
@@ -105,10 +101,7 @@ begin
   if AUrl.IsEmpty() then
     raise Exception.Create(cUrlIsEmpty);
 
-  if not Downloadable(AUrl) then
-    raise Exception.Create(cUrlIsNotALink);
-
-  if fState <> TDownloaderState.dsIdle then
+  if Downloading() then
     raise Exception.Create(cDownloaderIsBusy);
 
   fState := TDownloaderState.dsDownloading;
@@ -118,32 +111,9 @@ begin
   Subject.NotifyObservers();
 end;
 
-/// <summary>A private method that analyses the HTTP header to check if the URL stands for a download link.</summary>
-/// <param name="AUrl">The URL you want to check.</param>
-/// <returns>If the Content-Disposition field in the HTTP header has a file name, returns true, otherwise returns false.</returns>
-function TDownloader.Downloadable(AUrl: String): Boolean;
-var
-  lResponse: IHttpResponse;
+function TDownloader.Downloading: Boolean;
 begin
-  if AUrl.IsEmpty() then
-    raise Exception.Create(cUrlIsEmpty);
-
-  lResponse := fHttpRequest.Head(AUrl);
-
-  if lResponse = nil then
-  begin
-    Result := False;
-    Exit;
-  end;
-
-  try
-    if (not lResponse.ContainsHeader(cContentDisposition)) then
-      raise Exception.Create(cResponseHeaderDoesNotContainsContentField);
-
-    Result := TContentDisposition.ExtractType(lResponse.HeaderValue[cContentDisposition]) = cdtAttachment;
-  finally
-    lResponse._Release();
-  end;
+  Result := fState = TDownloaderState.dsDownloading;
 end;
 
 /// <summary>Private method used to deal with fNetHTTPRequest.OnReceiveData event. This method keep track on download progress.</summary>
@@ -152,11 +122,7 @@ begin
   if AContentLength <> 0 then
     fProgress := AReadCount / AContentLength  * 100;
 
-  if fState = TDownloaderState.dsAborted then
-  begin
-    AAbort := True;
-    fState := TDownloaderState.dsIdle;
-  end;
+  AAbort := fState = TDownloaderState.dsAborted;
 
   Subject.NotifyObservers();
 end;
@@ -164,10 +130,9 @@ end;
 /// <summary>A private method that is used to deal with fNetHTTPRequest.OnRequestCompleted event. This method just puts the downloader in an idle state.</summary>
 procedure TDownloader.OnRequestCompleted(const Sender: TObject; const AResponse: IHTTPResponse);
 begin
-  fState := TDownloaderState.dsIdle;
   if fProgress >= 100 then
   begin
-    fMessageQueue.Push(cDownloadCompleted);
+    fState := TDownloaderState.dsCompleted;
     Subject.NotifyObservers();
   end;
 end;

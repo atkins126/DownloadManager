@@ -4,8 +4,8 @@ uses
   Vcl.Forms,
   Observer in 'Source\Infra\Observer\Observer.pas',
   Subject in 'Source\Infra\Observer\Subject.pas',
-  ContentDisposition in 'Source\Domain\ContentDisposition.pas',
-  Constants in 'Source\Infra\Constants.pas',
+  HttpHeaderHelper in 'Source\Infra\Network\HttpHeaderHelper.pas',
+  InfraConsts in 'Source\Infra\InfraConsts.pas',
   FileManager in 'Source\Domain\FileManager.pas',
   GuidGenerator in 'Source\Infra\GuidGenerator.pas',
   Downloader in 'Source\Domain\Downloader.pas',
@@ -17,7 +17,13 @@ uses
   DownloadManager in 'Source\Domain\DownloadManager.pas',
   Main in 'Source\Desktop\Main.pas' {Form1},
   History in 'Source\Desktop\History.pas' {HistoryForm},
-  MessageQueue in 'Source\Infra\MessageQueue.pas';
+  MessageQueue in 'Source\Infra\MessageQueue.pas',
+  DesktopConsts in 'Source\Desktop\DesktopConsts.pas',
+  IdGenerator in 'Source\Infra\Repository\IdGenerator.pas',
+  Sequence in 'Source\Infra\Repository\Sequence.pas',
+  SequenceRepository in 'Source\Infra\Repository\SequenceRepository.pas',
+  RepositoryConsts in 'Source\Infra\Repository\RepositoryConsts.pas',
+  DomainConsts in 'Source\Domain\DomainConsts.pas';
 
 {$R *.res}
 

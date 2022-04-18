@@ -3,18 +3,11 @@ unit Main;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, FireDAC.Stan.Intf, FireDAC.Stan.Option,
-  FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf, FireDAC.Stan.Def,
-  FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys, FireDAC.Phys.SQLite,
-  FireDAC.Phys.SQLiteDef, FireDAC.Stan.ExprFuncs,
-  FireDAC.Phys.SQLiteWrapper.Stat, FireDAC.VCLUI.Wait, FireDAC.Stan.Param,
-  FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, Data.DB, FireDAC.Comp.DataSet,
-  FireDAC.Comp.Client, Data.DbxSqlite, Data.SqlExpr, Data.FMTBcd, Vcl.StdCtrls,
-  Datasnap.Provider, Datasnap.DBClient, Vcl.Grids, Vcl.DBGrids,
-  System.Net.URLClient, System.Net.HttpClient, System.Net.HttpClientComponent,
-  Vcl.ComCtrls, DateUtils, System.StrUtils, System.Threading, Data.DBXMySQL,
-  DownloadManager, Downloader, SimpleNetHTTPRequestProxy, Observer, LogDownloadRepository;
+  Forms, System.Classes, Data.DbxSqlite, Data.FMTBcd, System.Net.URLClient,
+  System.Net.HttpClient, System.Net.HttpClientComponent, Datasnap.Provider,
+  Datasnap.DBClient, Data.DB, Data.SqlExpr, Vcl.StdCtrls, Vcl.ComCtrls,
+  Vcl.Controls, Downloader, DownloadManager, SimpleNetHTTPRequestProxy,
+  LogDownloadRepository, Observer;
 
 type
   TMainForm = class(TForm, IObserver)
@@ -29,7 +22,6 @@ type
     StopButton: TButton;
     ProgressBar: TProgressBar;
     StatusBar: TStatusBar;
-    NetHTTPClient: TNetHTTPClient;
     NetHTTPRequest: TNetHTTPRequest;
     SequenceSQLDataSet: TSQLDataSet;
     SequenceDataSetProvider: TDataSetProvider;
@@ -47,6 +39,8 @@ type
     procedure ViewProgressButtonClick(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
   private
+    fCloseTheWindowWhenDownloadFinishes: Boolean;
+    fShowProgressOnButtonCaption: Boolean;
     fDownloader: TDownloader;
     fDownloadManager: TDownloadManager;
     fHttpRequest: TSimpleNetHTTPRequestProxy;
@@ -58,9 +52,12 @@ type
     procedure CreateLogDownloadRepository();
     procedure CreateDownloadManager();
     procedure SetupSQLConnection(ASQLConnection: TSQLConnection);
-    procedure ConfigureComponentEnablement(ADownloadState: TDownloaderState);
+    procedure ConfigureComponentEnablement();
     procedure CheckMessages();
     procedure Log(AText: String);
+    procedure ShowHistoryForm();
+    procedure UpdateProgressBar();
+    procedure UpdateViewProgressButton();
   public
     procedure Notify();
   end;
@@ -71,25 +68,8 @@ var
 implementation
 
 uses
-  System.Math, History;
-
-const
-  cEmptyUrlMessage = 'Você precisa informar a URL antes de clicar no botão "%s".';
-  cDownloaderIsBusy = 'Já existe um download em andamento e a ferramenta não suporta downloads simultâneos. Por favor aguarde.';
-  cDownloaderCantStopNow = 'Não há downloads em andamento no momento.';
-  cDatabaseParameter = 'Database';
-  cDatabaseFileExtension = '.db';
-  cScrollBarWidth = 20;
-  cDownloadDirectoryName = 'Download';
-  cDownloadInterruptConfirmation = 'Existe um download em andamento, deseja interrompe-lo';
-  cDownloadProgressMessage = 'Progresso = %s';
-
-  cDriverUnit = 'DriverUnit=Data.DbxSqlite';
-  cDriverPackageLoader = 'DriverPackageLoader=TDBXSqliteDriverLoader,DBXSqliteDriver280.bpl';
-  cMetaDataPackageLoader = 'MetaDataPackageLoader=TDBXSqliteMetaDataCommandFactory,DbxSqliteDriver280.bpl';
-  cFailIfMissing = 'FailIfMissing=True';
-  cDatabase = 'Database=%s';
-  cViewMessageButtonCaption = 'Ver mensagem';
+  System.Math, History, System.SysUtils, Vcl.Dialogs, StrUtils, DesktopConsts,
+  System.UITypes, IdGenerator, SequenceRepository;
 
 {$R *.dfm}
 
@@ -97,26 +77,35 @@ procedure TMainForm.DownloadButtonClick(Sender: TObject);
 begin
   if Trim(UrlEdit.Text) = EmptyStr then
   begin
-    MessageDlg(Format(cEmptyUrlMessage, [DownloadButton.Caption]), mtInformation, [mbOk], 0);
+    MessageDlg(cEmptyUrlMessage, mtInformation, [mbOk], 0);
     UrlEdit.SetFocus();
   end
-  else if fDownloader.State <> TDownloaderState.dsIdle then
-    MessageDlg(cDownloaderIsBusy, mtInformation, [mbOk], 0)
+  else if fDownloader.Downloading() then
+    MessageDlg(cDownloaderIsBusyMessage, mtInformation, [mbOk], 0)
   else
     fDownloadManager.DownloadAsync(UrlEdit.Text, GetDestinationDirectory());
 end;
 
 procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
-  CanClose := True;
-  if (fDownloader.State = TDownloaderState.dsDownloading) then
-    if MessageDlg(cDownloadInterruptConfirmation, mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
-      CanClose := False;
+  if fDownloader.Downloading() then
+  begin
+    CanClose := False;
+    if (MessageDlg(cDownloadInterruptConfirmationMessage, mtConfirmation, [mbYes, mbNo], 0) = mrYes) then
+    begin
+      fDownloadManager.Stop();
+      fCloseTheWindowWhenDownloadFinishes := True;
+    end;
+  end;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
   fLastShownMessage := EmptyStr;
+
+  fCloseTheWindowWhenDownloadFinishes := False;
+
+  fShowProgressOnButtonCaption := False;
 
   SetupSQLConnection(SqLiteConnection);
 
@@ -125,60 +114,64 @@ begin
   CreateLogDownloadRepository();
 
   CreateDownloadManager();
-
-  fLogDownloadRepository.SelectAll();
 end;
 
 procedure TMainForm.HistoryButtonClick(Sender: TObject);
-begin
-  with THistoryForm.Create(Self) do
-  begin
-    try
-      ShowModal();
-    finally
-      Free;
-    end;
-  end;
+begin  
+  ShowHistoryForm();
 end;
 
 procedure TMainForm.Log(AText: String);
 begin
-  LogMemo.Lines.Add('['+DateTimeToStr(Now) + '] -> ' + AText);
+  LogMemo.Lines.Add(Format(cLogText, [DateTimeToStr(Now), AText]));
 end;
 
 procedure TMainForm.LogDownloadClientDataSetReconcileError(DataSet: TCustomClientDataSet; E: EReconcileError; UpdateKind: TUpdateKind; var Action: TReconcileAction);
 begin
-  raise E;
+  Log(E.Message);
 end;
 
 procedure TMainForm.Notify;
 begin
-  ConfigureComponentEnablement(fDownloader.State);
+  ConfigureComponentEnablement();
 
-  ProgressBar.Position := IfThen(fDownloader.State = TDownloaderState.dsIdle, 0, Trunc(fDownloadManager.GetProgress()));
+  UpdateProgressBar();
 
-  CheckMessages();
+  UpdateViewProgressButton();
 
-  ViewProgressButton.Caption := IfThen(fDownloadManager.GetProgress >= 100, cViewMessageButtonCaption, ViewProgressButton.Caption);
+  CheckMessages();  
 
-  Application.ProcessMessages();
+  if fCloseTheWindowWhenDownloadFinishes and (not fDownloader.Downloading()) then
+    Self.Close()
+  else
+    Application.ProcessMessages();
 end;
 
 procedure TMainForm.StopButtonClick(Sender: TObject);
 begin
-  if fDownloader.State <> TDownloaderState.dsDownloading then
-    MessageDlg(cDownloaderCantStopNow, mtInformation, [mbOk], 0);
+  if not fDownloader.Downloading() then
+    MessageDlg(cDownloaderCantStopNowMessage, mtInformation, [mbOk], 0)
+  else
+    fDownloadManager.Stop();
+end;
 
-  fDownloadManager.Stop();
+procedure TMainForm.UpdateProgressBar;
+begin
+  ProgressBar.Position := IfThen(fDownloader.Downloading(), Trunc(fDownloadManager.GetProgress()), 0);
+end;
+
+procedure TMainForm.UpdateViewProgressButton;
+begin
+  if fShowProgressOnButtonCaption and fDownloader.Downloading() then
+    ViewProgressButton.Caption := Format(cDownloadProgressMessage, [Trunc(fDownloader.Progress).ToString()+'%'])
+  else
+    ViewProgressButton.Caption := cViewMessageButtonCaption;
 end;
 
 procedure TMainForm.ViewProgressButtonClick(Sender: TObject);
-var
-  lProgressText: String;
 begin
-  lProgressText := Format(cDownloadProgressMessage, [Trunc(fDownloader.Progress).ToString()+'%']);
-  ViewProgressButton.Caption := lProgressText;
-  Log(lProgressText);
+  fShowProgressOnButtonCaption := not fShowProgressOnButtonCaption;
+  UpdateViewProgressButton();
 end;
 
 function TMainForm.GetDestinationDirectory: String;
@@ -194,16 +187,31 @@ begin
   ASQLConnection.Params.Add(cDriverPackageLoader);
   ASQLConnection.Params.Add(cMetaDataPackageLoader);
   ASQLConnection.Params.Add(cFailIfMissing);
-  ASQLConnection.Params.Add(Format(cDatabase, [ChangeFileExt(Application.ExeName, '.db')]));
+  ASQLConnection.Params.Add(Format(cDatabase, [ChangeFileExt(Application.ExeName, cDatabaseFileExtension)]));
   ASQLConnection.Open;
 end;
 
-procedure TMainForm.ConfigureComponentEnablement(ADownloadState: TDownloaderState);
+procedure TMainForm.ShowHistoryForm;
 begin
-  StopButton.Enabled := ADownloadState = TDownloaderState.dsDownloading;
-  ViewProgressButton.Enabled := ADownloadState = TDownloaderState.dsDownloading;
-  ProgressBar.Visible := ADownloadState = TDownloaderState.dsDownloading;
-  UrlEdit.Visible := ADownloadState <> TDownloaderState.dsDownloading;
+  with THistoryForm.Create(Self) do
+  begin
+    try
+      ShowModal();
+    finally
+      Free;
+    end;
+  end;
+end;
+
+procedure TMainForm.ConfigureComponentEnablement();
+begin
+  StopButton.Enabled := fDownloader.Downloading();
+  ProgressBar.Visible := fDownloader.Downloading();
+  ViewProgressButton.Enabled := fDownloader.Downloading();
+
+  UrlEdit.Visible := not fDownloader.Downloading();
+  HistoryButton.Enabled := not fDownloader.Downloading();
+  DownloadButton.Enabled := not fDownloader.Downloading();
 end;
 
 procedure TMainForm.CreateDownloader;
@@ -214,20 +222,22 @@ begin
 end;
 
 procedure TMainForm.CreateDownloadManager;
+var
+  lSequenceRepository: TSequenceRepository;
+  lIdGenerator: TIdGenerator;
 begin
-  fDownloadManager := TDownloadManager.Create(fDownloader, fLogDownloadRepository);
+  lSequenceRepository := TSequenceRepository.Create(SequenceSQLDataSet, SequenceClientDataSet);
+
+  lIdGenerator := TIdGenerator.Create(lSequenceRepository, SequenceClientDataSet);
+
+  fDownloadManager := TDownloadManager.Create(fDownloader, fLogDownloadRepository, lIdGenerator);
+
   fDownloadManager.Subject.AddObserver(Self);
 end;
 
 procedure TMainForm.CreateLogDownloadRepository;
 begin
-  fLogDownloadRepository := TLogDownloadRepository.Create(
-    SqLiteConnection,
-    LogDownloadSqlDataSet,
-    LogDownloadClientDataSet,
-    SequenceSqlDataSet,
-    SequenceClientDataSet
-  );
+  fLogDownloadRepository := TLogDownloadRepository.Create(LogDownloadSqlDataSet, LogDownloadClientDataSet);
 end;
 
 procedure TMainForm.CheckMessages();

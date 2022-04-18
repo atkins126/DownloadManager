@@ -131,7 +131,6 @@ object MainForm: TMainForm
       
         'Database=D:\softplan\prova-delphi\v3\download-manager\DownloadMa' +
         'nager.Vcl\Win32\Debug\DownloadManager.Vcl.db')
-    Connected = True
     Left = 295
     Top = 176
   end
@@ -161,13 +160,10 @@ object MainForm: TMainForm
     Left = 295
     Top = 272
   end
-  object NetHTTPClient: TNetHTTPClient
-    UserAgent = 'Embarcadero URI Client/1.0'
-    Left = 72
-    Top = 240
-  end
   object NetHTTPRequest: TNetHTTPRequest
-    Client = NetHTTPClient
+    ConnectionTimeout = 0
+    SendTimeout = 0
+    ResponseTimeout = 0
     Left = 72
     Top = 168
   end

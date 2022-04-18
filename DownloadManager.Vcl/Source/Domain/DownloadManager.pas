@@ -4,7 +4,8 @@ interface
 
 uses
   System.Contnrs, Observer, Subject, Downloader, FileManager, LogDownload,
-  System.Generics.Collections, LogDownloadRepository, MessageQueue;
+  System.Generics.Collections, LogDownloadRepository, MessageQueue, IdGenerator,
+  Net.HttpClient;
 
 type
   TDownloadManager = class
@@ -14,12 +15,14 @@ type
     fFileManager: TFileManager;
     fDownloader: TDownloader;
     fLogDownloadRepository: TLogDownloadRepository;
+    fIdGenerator: TIdGenerator;
+    function GetFileName(AUrl: String; AHttpResponse: IHttpResponse): String;
     procedure PushMessage(AMessage: String);
   public
     property Subject: TSubject read fSubject;
     property MessageQueue: TMessageQueue read fMessageQueue;
 
-    constructor Create(ADownloader: TDownloader; ALogDownloadRepository: TLogDownloadRepository);
+    constructor Create(ADownloader: TDownloader; ALogDownloadRepository: TLogDownloadRepository; AIdGenerator: TIdGenerator);
     destructor Destroy(); override;
 
     procedure Download(AUrl: String; ADestinationDirectory: String);
@@ -31,23 +34,19 @@ type
 implementation
 
 uses
-  System.SysUtils, Threading, System.Classes, Net.HttpClient,
-  ContentDisposition, Variants;
-
-const
-  cDownloadStarted = 'Download iniciado';
-  cDownloadAborted = 'Download abortado pelo usuário';
-  cFileSaved = 'Arquivo salvo em "%s"';
+  System.SysUtils, Threading, System.Classes, HttpHeaderHelper, Variants,
+  RepositoryConsts, DomainConsts, IdUri;
 
 { TDownloadManager }
 
-constructor TDownloadManager.Create(ADownloader: TDownloader; ALogDownloadRepository: TLogDownloadRepository);
+constructor TDownloadManager.Create(ADownloader: TDownloader; ALogDownloadRepository: TLogDownloadRepository; AIdGenerator: TIdGenerator);
 begin
   fLogDownloadRepository := ALogDownloadRepository;
   fFileManager := TFileManager.Create();
   fDownloader := ADownloader;
   fSubject := TSubject.Create();
   fMessageQueue := TMessageQueue.Create();
+  fIdGenerator := AIdGenerator;
 end;
 
 destructor TDownloadManager.Destroy;
@@ -63,6 +62,7 @@ var
   lFileName: String;
   lHttpResponse: IHttpResponse;
   lStartDate: TDateTime;
+  lId: Int64;
 begin
   PushMessage(cDownloadStarted);
 
@@ -70,15 +70,21 @@ begin
 
   lHttpResponse := fDownloader.Download(AUrl);
 
-  if GetProgress() > 100 then
+  if GetProgress() >= 100 then
   begin
-    lFileName := TContentDisposition.ExtractFileName(lHttpResponse.HeaderValue['Content-Disposition']);
+    PushMessage(cDownloadCompleted);
+
+    lFileName := GetFileName(AUrl, lHttpResponse);
 
     fFileManager.SaveFile(lHttpResponse.ContentStream, ADestinationDirectory, lFileName, True, True);
 
-    PushMessage(Format(cFileSaved, [lFileName]));
+    PushMessage(Format(cFileSaved, [IncludeTrailingPathDelimiter(ADestinationDirectory) + lFileName]));
 
-    fLogDownloadRepository.Insert(TLogDownload.Create(0, AUrl, lStartDate, Now));
+    lId := fIdGenerator.GenerateId(cLogDownloadTableName);
+
+    fLogDownloadRepository.Insert(TLogDownload.Create(lId, AUrl, lStartDate, Now));
+
+    PushMessage(cLogCreate);
   end;
 end;
 
@@ -98,6 +104,14 @@ begin
       end;
     end
   );
+end;
+
+function TDownloadManager.GetFileName(AUrl: String; AHttpResponse: IHttpResponse): String;
+begin
+  Result := THttpHeaderHelper.ExtractFileNameFromHeader(AHttpResponse);
+
+  if Result.IsEmpty then
+    Result := TIdUri.Create(AUrl).Document;
 end;
 
 function TDownloadManager.GetProgress(): Double;
