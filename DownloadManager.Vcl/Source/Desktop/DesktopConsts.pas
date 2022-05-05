@@ -11,19 +11,15 @@ const
   cDownloadProgressMessage = 'Progresso: %s';
   {$endregion}
 
-  {$region 'SQL connection configuration'}
-  cDriverUnit = 'DriverUnit=Data.DbxSqlite';
-  cDriverPackageLoader = 'DriverPackageLoader=TDBXSqliteDriverLoader,DBXSqliteDriver280.bpl';
-  cMetaDataPackageLoader = 'MetaDataPackageLoader=TDBXSqliteMetaDataCommandFactory,DbxSqliteDriver280.bpl';
-  cFailIfMissing = 'FailIfMissing=True';
-  cDatabase = 'Database=%s';
-  {$endregion}
-
   {$region 'Others'}
   cDownloadDirectoryName = 'Download';
   cDatabaseFileExtension = '.db';
   cViewMessageButtonCaption = 'Ver mensagem';
   cLogText = '[%s] -> %s';
+  cShellExecuteOperationOpen = 'open';
+  cShellExecuteOperationParameter = '/select,';
+  cWindowsExplorer = 'explorer.exe';
+  cScrollBarWidth = 37;
   {$endregion}
 
 implementation

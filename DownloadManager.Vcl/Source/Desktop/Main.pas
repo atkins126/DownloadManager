@@ -7,7 +7,7 @@ uses
   System.Net.HttpClient, System.Net.HttpClientComponent, Datasnap.Provider,
   Datasnap.DBClient, Data.DB, Data.SqlExpr, Vcl.StdCtrls, Vcl.ComCtrls,
   Vcl.Controls, Downloader, DownloadManager, SimpleNetHTTPRequestProxy,
-  LogDownloadRepository, Observer;
+  Observer, MessageQueue, Vcl.Dialogs, LogDownload, Repository;
 
 type
   TMainForm = class(TForm, IObserver)
@@ -30,6 +30,7 @@ type
     ViewProgressButton: TButton;
     HistoryButton: TButton;
     LogMemo: TMemo;
+    FileSaveDialog: TFileSaveDialog;
 
     procedure FormCreate(Sender: TObject);
     procedure DownloadButtonClick(Sender: TObject);
@@ -44,16 +45,19 @@ type
     fDownloader: TDownloader;
     fDownloadManager: TDownloadManager;
     fHttpRequest: TSimpleNetHTTPRequestProxy;
-    fLogDownloadRepository: TLogDownloadRepository;
+    fLogDownloadRepository: TRepository<TLogDownload>;
     fLastShownMessage: String;
 
     function GetDestinationDirectory(): String;
+    function GetDestinationFileName(AUrl: String): String;
+    function ExecuteSaveDialog(AUrl: String): String;
+
     procedure CreateDownloader();
-    procedure CreateLogDownloadRepository();
     procedure CreateDownloadManager();
-    procedure SetupSQLConnection(ASQLConnection: TSQLConnection);
+    procedure CreateRepository();
     procedure ConfigureComponentEnablement();
-    procedure CheckMessages();
+    procedure CheckMessages(); overload;
+    procedure CheckMessages(AMessageQueue: TMessageQueue); overload;
     procedure Log(AText: String);
     procedure ShowHistoryForm();
     procedure UpdateProgressBar();
@@ -68,12 +72,14 @@ var
 implementation
 
 uses
-  System.Math, History, System.SysUtils, Vcl.Dialogs, StrUtils, DesktopConsts,
-  System.UITypes, IdGenerator, SequenceRepository;
+  System.Math, History, System.SysUtils, StrUtils, DesktopConsts,
+  System.UITypes, FileManager, ORMConfigurationBuilder;
 
 {$R *.dfm}
 
 procedure TMainForm.DownloadButtonClick(Sender: TObject);
+var
+  lCompleteFileName: String;
 begin
   if Trim(UrlEdit.Text) = EmptyStr then
   begin
@@ -83,7 +89,25 @@ begin
   else if fDownloader.Downloading() then
     MessageDlg(cDownloaderIsBusyMessage, mtInformation, [mbOk], 0)
   else
-    fDownloadManager.DownloadAsync(UrlEdit.Text, GetDestinationDirectory());
+  begin
+    lCompleteFileName := ExecuteSaveDialog(UrlEdit.Text);
+    if lCompleteFileName.IsEmpty then
+      MessageDlg('O nome do arquivo não foi informado.', TMsgDlgType.mtWarning, [mbOk], 0)
+    else
+      fDownloadManager.DownloadAsync(UrlEdit.Text, lCompleteFileName);
+  end;
+end;
+
+function TMainForm.ExecuteSaveDialog(AUrl: String): String;
+begin
+  FileSaveDialog.DefaultFolder := GetDestinationDirectory();
+
+  FileSaveDialog.FileName := GetDestinationFileName(AUrl);
+
+  if FileSaveDialog.Execute() then
+    Result := FileSaveDialog.FileName
+  else
+    Result := EmptyStr;
 end;
 
 procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -107,11 +131,9 @@ begin
 
   fShowProgressOnButtonCaption := False;
 
-  SetupSQLConnection(SqLiteConnection);
+  CreateRepository();
 
   CreateDownloader();
-
-  CreateLogDownloadRepository();
 
   CreateDownloadManager();
 end;
@@ -171,6 +193,7 @@ end;
 procedure TMainForm.ViewProgressButtonClick(Sender: TObject);
 begin
   fShowProgressOnButtonCaption := not fShowProgressOnButtonCaption;
+
   UpdateViewProgressButton();
 end;
 
@@ -179,16 +202,34 @@ begin
   Result := IncludeTrailingPathDelimiter(ExtractFilePath(Application.ExeName)) + cDownloadDirectoryName;
 end;
 
-procedure TMainForm.SetupSQLConnection(ASQLConnection: TSQLConnection);
+function TMainForm.GetDestinationFileName(AUrl: String): String;
+var
+  lFileName: String;
+  lFileExtension: String;
+  lFileNameWithouExtension: String;
+  lCompleteFileName: String;
+  lCount: Integer;
 begin
-  ASQLConnection.Close;
-  ASQLConnection.Params.Clear();
-  ASQLConnection.Params.Add(cDriverUnit);
-  ASQLConnection.Params.Add(cDriverPackageLoader);
-  ASQLConnection.Params.Add(cMetaDataPackageLoader);
-  ASQLConnection.Params.Add(cFailIfMissing);
-  ASQLConnection.Params.Add(Format(cDatabase, [ChangeFileExt(Application.ExeName, cDatabaseFileExtension)]));
-  ASQLConnection.Open;
+  lCount := 0;
+
+  lFileName := fDownloadManager.ExtractFileName(AUrl);
+
+  lFileNameWithouExtension := ChangeFileExt(lFileName, '');
+
+  lCompleteFileName := TFileManager.BuildCompleteFileName(GetDestinationDirectory(), lFileName);
+
+  while FileExists(lCompleteFileName) do
+  begin
+    lCount := lCount + 1;
+
+    lFileExtension := ExtractFileExt(lFileName);
+
+    lFileName := Format(lFileNameWithouExtension + ' (%d)' + lFileExtension, [lCount]);
+
+    lCompleteFileName := TFileManager.BuildCompleteFileName(GetDestinationDirectory(), lFileName);
+  end;
+
+  Result := lFileName;
 end;
 
 procedure TMainForm.ShowHistoryForm;
@@ -222,40 +263,34 @@ begin
 end;
 
 procedure TMainForm.CreateDownloadManager;
-var
-  lSequenceRepository: TSequenceRepository;
-  lIdGenerator: TIdGenerator;
 begin
-  lSequenceRepository := TSequenceRepository.Create(SequenceSQLDataSet, SequenceClientDataSet);
-
-  lIdGenerator := TIdGenerator.Create(lSequenceRepository, SequenceClientDataSet);
-
-  fDownloadManager := TDownloadManager.Create(fDownloader, fLogDownloadRepository, lIdGenerator);
+  fDownloadManager := TDownloadManager.Create(fDownloader, fLogDownloadRepository);
 
   fDownloadManager.Subject.AddObserver(Self);
 end;
 
-procedure TMainForm.CreateLogDownloadRepository;
+procedure TMainForm.CreateRepository;
 begin
-  fLogDownloadRepository := TLogDownloadRepository.Create(LogDownloadSqlDataSet, LogDownloadClientDataSet);
+  TORMConfigurationBuilder.CreateDormConfFileName(TORMConfigurationBuilder.GetDormConfFileName(), TORMConfigurationBuilder.GetDbFileName());
+
+  fLogDownloadRepository := TRepository<TLogDownload>.Create();
 end;
 
 procedure TMainForm.CheckMessages();
+begin
+  CheckMessages(fDownloader.MessageQueue);
+  CheckMessages(fDownloadManager.MessageQueue);
+end;
+
+procedure TMainForm.CheckMessages(AMessageQueue: TMessageQueue);
 var
   lLastMsg: String;
 begin
-  lLastMsg := fDownloader.MessageQueue.Pull();
+  lLastMsg := AMessageQueue.Pull();
   while not lLastMsg.IsEmpty do
   begin
     Log(lLastMsg);
-    lLastMsg := fDownloader.MessageQueue.Pull();
-  end;
-
-  lLastMsg := fDownloadManager.MessageQueue.Pull();
-  while not lLastMsg.IsEmpty do
-  begin
-    Log(lLastMsg);
-    lLastMsg := fDownloadManager.MessageQueue.Pull();
+    lLastMsg := AMessageQueue.Pull();
   end;
 end;
 

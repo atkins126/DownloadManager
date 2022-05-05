@@ -3,116 +3,75 @@ unit Repository;
 interface
 
 uses
-  Data.SqlExpr, DataSnap.DBClient, Data.DB;
+  Data.SqlExpr, DataSnap.DBClient, Data.DB, System.Generics.Collections, dorm;
 
 type
-  TRepository<TEntity> = class
+  TRepository<TEntity: class> = class
   private
-    procedure OnReconcileError(DataSet: TCustomClientDataSet; E: EReconcileError; UpdateKind: TUpdateKind; var Action: TReconcileAction);
-  protected
-    fSqlDataSet: TSQLDataSet;
-    fClientDataSet: TClientDataSet;
-    fLastError: String;
-
-    procedure OpenDataSet(ASql: String; AParams: Array of variant);
-    procedure OpenDataSetWithAllRegistries(ATableName: String);
-    procedure OpenDataSetWithNoRegistry(ATableName: String);
-    procedure OpenDataSetWithOneRegistry(ATableName, AIdFieldName: String; AId: Variant);
-    procedure PersistToDataBase();
+    fDormSession: TSession;
   public
-    constructor Create(ASqlDataSet: TSqlDataSet; AClientDataSet: TClientDataSet);
+    constructor Create();
+    destructor Destroy(); override;
 
-    procedure Insert(AEntity: TEntity); virtual; abstract;
-    procedure Update(AId: Variant; AEntity: TEntity); virtual; abstract;
-    procedure Delete(AId: Variant); virtual; abstract;
-    procedure SelectById(AId: Variant); virtual; abstract;
-    procedure SelectAll(); virtual; abstract;
-    procedure Select(ASql: String; AParams: Array of variant);
+    procedure Insert(AEntity: TEntity);
+    procedure Delete(AId: Integer);
+
+    function SelectById(AId: Integer): TEntity;
+    function SelectAll(): TList<TEntity>;
   end;
 
 implementation
 
 uses
-  System.SysUtils, StrUtils, RepositoryConsts;
+  System.SysUtils, System.Classes, StrUtils, RepositoryConsts, dorm.Commons,
+  ORMConfigurationBuilder;
 
-
-{ TRepository<TEntity> }
-
-constructor TRepository<TEntity>.Create(ASqlDataSet: TSqlDataSet; AClientDataSet: TClientDataSet);
+/// <summary>This method creates an instance of TLogDownloadRepository class.</summary>
+/// <returns>Returns an instance of TLogDownloadRepository class.</returns>
+constructor TRepository<TEntity>.Create;
 begin
-  fSqlDataSet := ASqlDataSet;
-  fClientDataSet := AClientDataSet;
-  fClientDataSet.OnReconcileError := OnReconcileError;
+  fDormSession := TSession.CreateConfigured(TStreamReader.Create(TORMConfigurationBuilder.GetDormConfFileName()), TdormEnvironment.deRelease);
 end;
 
-procedure TRepository<TEntity>.OnReconcileError(DataSet: TCustomClientDataSet; E: EReconcileError; UpdateKind: TUpdateKind; var Action: TReconcileAction);
-begin
-  fLastError := E.Message;
-end;
-
-procedure TRepository<TEntity>.OpenDataSetWithNoRegistry(ATableName: String);
+/// <summary>Removes a specific log register from the database.</summary>
+/// <param name="AId">The record ID you want to remove.</param>
+procedure TRepository<TEntity>.Delete(AId: Integer);
 var
-  lSql: String;
+  lEntity: TEntity;
 begin
-  lSql := Format(cCommandTextForNoRegistry, [ATableName]);
-
-  OpenDataSet(lSql, []);
-
-  if fClientDataSet.RecordCount > 0 then
-    raise Exception.Create(cMoreThanZeroRegistryFound);
+  lEntity := fDormSession.Load<TEntity>(AId);
+  try
+    fDormSession.Delete(lEntity);
+  finally
+    lEntity.Free;
+  end;
 end;
 
-procedure TRepository<TEntity>.OpenDataSet(ASql: String; AParams: Array of variant);
-var
-  I: Integer;
+/// <summary>Releases the memory allocated by constructor.</summary>
+destructor TRepository<TEntity>.Destroy;
 begin
-  fSqlDataSet.Close;
-
-  fSqlDataSet.CommandText := ASql;
-
-  for I := Low(AParams) to High(AParams) do
-    fSqlDataSet.Params[0].Value := AParams[I];
-
-  fSqlDataSet.Open;
-
-  fClientDataSet.Close();
-
-  fClientDataSet.Open();
+  if Assigned(fDormSession) then
+    fDormSession.Free;
 end;
 
-procedure TRepository<TEntity>.OpenDataSetWithAllRegistries(ATableName: String);
-var
-  lSql: String;
+/// <summary>Inserts a log register into the database.</summary>
+/// <param name="AEntity">The entity with the log data.</param>
+procedure TRepository<TEntity>.Insert(AEntity: TEntity);
 begin
-  lSql := Format(cCommandTextForAllRegistries, [ATableName]);
-  OpenDataSet(lSql, []);
+  fDormSession.Insert(AEntity);
 end;
 
-procedure TRepository<TEntity>.OpenDataSetWithOneRegistry(ATableName, AIdFieldName: String; AId: Variant);
-var
-  lSql: String;
+/// <summary> Uses the internal dataset to retrieve all the log entries from the database.</summary>
+function TRepository<TEntity>.SelectAll(): TList<TEntity>;
 begin
-  lSql := Format(cCommandTextForOneRegistry, [ATableName, AIdFieldName]);
-
-  OpenDataSet(lSql, [AId]);
-
-  if fClientDataSet.RecordCount <> 1 then
-    raise Exception.Create(cMoreThanOneRegistryFound);
+  Result := fDormSession.LoadList<TEntity>();
 end;
 
-procedure TRepository<TEntity>.PersistToDataBase;
-var
-  lErrorsCount: Integer;
+/// <summary> Uses the internal dataset to retrieve a specific log entry from the database.</summary>
+/// <param name="AId">The record ID you want to recover.</param>
+function TRepository<TEntity>.SelectById(AId: Integer): TEntity;
 begin
-  lErrorsCount := fClientDataSet.ApplyUpdates(0);
-
-  if lErrorsCount > 0 then
-    raise Exception.Create(IfThen(fLastError.IsEmpty, cUnknownError));
-end;
-
-procedure TRepository<TEntity>.Select(ASql: String; AParams: array of variant);
-begin
-  OpenDataSet(ASql, AParams);
+  Result := fDormSession.Load<TEntity>(AId);
 end;
 
 end.

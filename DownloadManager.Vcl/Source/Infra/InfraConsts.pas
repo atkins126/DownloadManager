@@ -3,7 +3,7 @@ unit InfraConsts;
 interface
 
 const
-  {$region symbols}
+  {$region 'symbols'}
   cEmptyString = '';
   cComma = ',';
   cSemiColon = ';';
@@ -15,8 +15,9 @@ const
   cBackSlash = '\';
   {$endregion}
 
-  {$region messages}
-  cNotThronwException = 'Uma exceção esperada não foi lançada.';
+  {$region 'messages'}
+  cGuidCantBeGenerate = 'Não foi possível gerar o GUID';
+  cMessageParameterIsNull = 'O parâmetro AMessage não pode ser nulo.';
   {$endregion}
 
 implementation

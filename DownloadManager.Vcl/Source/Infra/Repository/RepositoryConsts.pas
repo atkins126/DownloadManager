@@ -3,44 +3,36 @@ unit RepositoryConsts;
 interface
 
 const
-  {$region 'log download field names'}
-  cIdFieldName = 'codigo';
-  cUrlFieldName = 'url';
-  cStartDateFieldName = 'datainicio';
-  cFinishDateFieldName = 'datafim';
-  {$endregion}
+  cDormConfFile = 'dorm.conf';
 
-  {$region 'sequence field names'}
-  cLastIdFieldName = 'ultimocodigo';
-  cTableNameFieldName = 'nometabela';
-  {$endregion}
-
-  {$region 'select'}
-  cCommandTextForOneRegistry = 'select * from %s where %s = :codigo';
-  cCommandTextForNoRegistry = 'select * from %s where 1=2';
-  cCommandTextForAllRegistries = 'select * from %s';
-  {$endregion}
-
-  {$region 'SQLConnection'}
-  cDriverNameProperty = 'Sqlite';
-  cDriverNameParam = 'DriverName=Sqlite';
-  cDatabaseParam = 'Database=%s';
-  cSelectLastTableID = 'select ultimocodigo, nometabela from sequence where nometabela = :nometabela';
-  cSelectEspecificTableID = 'select * from sequence where nometabela = :nometabela and ultimocodigo = :ultimocodigo';
-  {$endregion}
-
-  {$region 'Messages'}
-  cMoreThanOneRegistryFound = 'Algo muito estranho ocorreu: Há mais que um registro no banco de dados com o ID %d. Por favor, avise o desenvolvedor imediatamente.';
-  cMoreThanZeroRegistryFound = 'Algo muito estranho ocorreu: O dataset deveria estar vazio, mas não está. Isso é um bug e preciso que você avise o desenvolvedor.';
-  cUnknownError = 'Erro desconhecido';
-  {$endregion}
-
-  {$region 'Others'}
-  cLastIdField = 'ultimocodigo';
-  cTableNameField = 'nometabela';
-  cLogDownloadTableName = 'logdownload';
-  cSequenceTableName = 'sequence';
-  {$endregion}
+  cDormConfFileContent = '{' + #13#10 +
+                         '  "persistence": {'+ #13#10 +
+                         '    "development": {'+ #13#10 +
+                         '      "database_adapter": "dorm.adapter.Sqlite3.TSqlite3PersistStrategy",'+ #13#10 +
+                         '      "database_connection_string": "%s",'+ #13#10 +
+                         '      "key_type": "integer",'+ #13#10 +
+                         '      "null_key_value": null,'+ #13#10 +
+                         '      "keys_generator": "dorm.adapter.UIB.Firebird.TUIBFirebirdTableSequence"'+ #13#10 +
+                         '    },'+ #13#10 +
+                         '    "release": {'+ #13#10 +
+                         '      "database_adapter": "dorm.adapter.Sqlite3.TSqlite3PersistStrategy",'+ #13#10 +
+                         '      "database_connection_string": "%s",'+ #13#10 +
+                         '      "key_type": "integer",'+ #13#10 +
+                         '      "null_key_value": null,'+ #13#10 +
+                         '      "keys_generator": "dorm.adapter.UIB.Firebird.TUIBFirebirdTableSequence"'+ #13#10 +
+                         '    },'+ #13#10 +
+                         '    "test": {'+ #13#10 +
+                         '      "database_adapter": "dorm.adapter.Sqlite3.TSqlite3PersistStrategy",'+ #13#10 +
+                         '      "database_connection_string": "%s",'+ #13#10 +
+                         '      "key_type": "integer",'+ #13#10 +
+                         '      "null_key_value": null,'+ #13#10 +
+                         '      "keys_generator": "dorm.adapter.UIB.Firebird.TUIBFirebirdTableSequence"'+ #13#10 +
+                         '    }'+ #13#10 +
+                         '  },'+ #13#10 +
+                         '  "config": {'+ #13#10 +
+                         '    "logger_class_name": "dorm.loggers.FileLog.TdormFileLog"'+ #13#10 +
+                         '  }'+ #13#10 +
+                         '}';
 
 implementation
 

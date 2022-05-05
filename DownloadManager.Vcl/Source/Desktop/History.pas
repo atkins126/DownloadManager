@@ -13,31 +13,24 @@ type
     GridPanel: TPanel;
     ButtonsPanel: TPanel;
     CloseButton: TButton;
-    HistorySQLDataSet: TSQLDataSet;
-    HistoryDataSetProvider: TDataSetProvider;
     HistoryClientDataSet: TClientDataSet;
     HistorySQLDataSetDataSource: TDataSource;
-    SqLiteConnection: TSQLConnection;
     StatusBar1: TStatusBar;
     HistoryDBGrid: TDBGrid;
-    HistoryClientDataSetCodigo: TLargeintField;
-    HistoryClientDataSetUrl: TWideStringField;
-    HistoryClientDataSetDataInicio: TWideMemoField;
-    HistoryClientDataSetDataFim: TWideMemoField;
-    HistorySQLDataSetCodigo: TLargeintField;
-    HistorySQLDataSetUrl: TWideStringField;
-    HistorySQLDataSetDataInicio: TWideMemoField;
-    HistorySQLDataSetDataFim: TWideMemoField;
+    HistoryClientDataSetCompleteFileName: TStringField;
+    HistoryClientDataSetUrl: TStringField;
+    HistoryClientDataSetStartDate: TDateTimeField;
+    HistoryClientDataSetFinishDate: TDateTimeField;
 
     procedure CloseButtonClick(Sender: TObject);
     procedure DateGetText(Sender: TField; var Text: string; DisplayText: Boolean);
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure HistoryDBGridDblClick(Sender: TObject);
   private
-    { Private declarations }
-  public
-    { Public declarations }
+    procedure SelectFileInExplorer(ACompleteFileName: string);
+    procedure LoadDonwnloadLog();
   end;
 
 var
@@ -45,10 +38,11 @@ var
 
 implementation
 
-{$R *.dfm}
+uses
+  RepositoryConsts, ShellAPI, DesktopConsts, Repository, LogDownload,
+  System.Generics.Collections;
 
-const
-  cScrollBarWidth = 37;
+{$R *.dfm}
 
 procedure THistoryForm.CloseButtonClick(Sender: TObject);
 begin
@@ -56,15 +50,20 @@ begin
 end;
 
 procedure THistoryForm.DateGetText(Sender: TField; var Text: string; DisplayText: Boolean);
+var
+  lDateAsString: String;
 begin
-  Text := DateTimeToStr(StrToDateTime(Sender.AsString));
+  if not HistoryClientDataSet.IsEmpty then
+  begin
+    lDateAsString := Sender.AsString;
+    if not lDateAsString.IsEmpty then
+      Text := DateTimeToStr(StrToDateTime(lDateAsString));
+  end;
 end;
 
 procedure THistoryForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   HistoryClientDataSet.Close;
-  HistorySQLDataSet.Close;
-  SqLiteConnection.Close;
 end;
 
 procedure THistoryForm.FormResize(Sender: TObject);
@@ -73,13 +72,71 @@ begin
     + HistoryDBGrid.Width
     - HistoryDBGrid.Columns[0].Width
     - HistoryDBGrid.Columns[1].Width
+    - HistoryDBGrid.Columns[3].Width
     - cScrollBarWidth;
 end;
 
 procedure THistoryForm.FormShow(Sender: TObject);
 begin
   HistoryClientDataSet.Close;
-  HistoryClientDataSet.Open;
+  HistoryClientDataSet.CreateDataSet;
+
+  HistoryClientDataSetStartDate.OnGetText := DateGetText;
+  HistoryClientDataSetFinishDate.OnGetText := DateGetText;
+
+  LoadDonwnloadLog();
+end;
+
+procedure THistoryForm.HistoryDBGridDblClick(Sender: TObject);
+var
+  lCompleteFileName: String;
+begin
+  if not HistoryClientDataSet.IsEmpty then
+  begin
+    lCompleteFileName := HistoryClientDataSetCompleteFileName.AsString;
+    if not lCompleteFileName.IsEmpty then
+      SelectFileInExplorer(lCompleteFileName);
+  end;
+end;
+
+procedure THistoryForm.LoadDonwnloadLog;
+var
+  lRepository: TRepository<TLogDownload>;
+  lDownloadLogList: TList<TLogDownload>;
+  lLogDownload: TLogDownload;
+begin
+  lRepository := TRepository<TLogDownload>.Create();
+  try
+    lDownloadLogList := lRepository.SelectAll();
+    try
+      HistoryClientDataSet.EmptyDataSet;
+      for lLogDownload in lDownloadLogList do
+      begin
+        HistoryClientDataSet.Append;
+        HistoryClientDataSetStartDate.Value := lLogDownload.StartDate;
+        HistoryClientDataSetFinishDate.Value := lLogDownload.FinishDate;
+        HistoryClientDataSetCompleteFileName.Value := lLogDownload.CompleteFileName;
+        HistoryClientDataSetUrl.Value := lLogDownload.Url;
+        HistoryClientDataSet.Post;
+      end;
+    finally
+      lDownloadLogList.Free
+    end;
+  finally
+    lRepository.Free;
+  end;
+end;
+
+procedure THistoryForm.SelectFileInExplorer(ACompleteFileName: string);
+begin
+  ShellExecute(
+    Application.Handle,
+    cShellExecuteOperationOpen,
+    cWindowsExplorer,
+    PChar(cShellExecuteOperationParameter + '"' + ACompleteFileName + '"'),
+    nil,
+    SW_NORMAL
+  );
 end;
 
 end.
